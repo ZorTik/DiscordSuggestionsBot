@@ -1,11 +1,12 @@
 import * as fs from "fs";
-import {ErrorAwareQueue, Evt, nonNull, Nullable} from "./util";
+import {ErrorAwareQueue, Evt, Named, nonNull, Nullable} from "./util";
 import {SlashCommandBuilder, SlashCommandSubcommandBuilder} from "@discordjs/builders";
-import {CommandInteraction, Guild} from "discord.js";
+import {Client, CommandInteraction, Guild} from "discord.js";
 import {Registry} from "zortik-common-libs";
 import {REST} from "@discordjs/rest";
 import {client, rest} from "./app";
 import {Routes} from "discord-api-types/v9";
+import {SuggestionsBot} from "./bot";
 
 class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
     private readonly path: string;
@@ -90,6 +91,42 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
     }
 }
 
+class EventModuleLoader extends FileTreeModuleLoader<EventModule> {
+    private client: Client;
+    constructor(path: string, client: Client) {
+        super(path);
+        this.client = client;
+    }
+    async load(): Promise<Nullable<string>> {
+        const loadErr = await super.load();
+        if(loadErr != null) {
+            return loadErr;
+        }
+        const eventModules = this.getChildModules();
+        eventModules.forEach(module => {
+            client.on(module.name, module.on)
+        });
+    }
+}
+
+class SuggestionEventModuleLoader extends FileTreeModuleLoader<SuggestionEventModule> {
+    private bot: SuggestionsBot;
+    constructor(path: string, bot: SuggestionsBot) {
+        super(path);
+        this.bot = bot;
+    }
+    async load(): Promise<Nullable<string>> {
+        const loadErr = await super.load();
+        if(loadErr != null) {
+            return loadErr;
+        }
+        const eventModules = this.getChildModules();
+        eventModules.forEach(module => {
+            this.bot.on(module.name, module.onSuggestionEvent);
+        });
+    }
+}
+
 class ModuleLoaderQueue extends ErrorAwareQueue<Module> implements ModuleLoader<Module>, Registry<Module> {
     readonly modules: Module[];
     constructor(loaders: ModuleLoader<any>[] = []) {
@@ -124,13 +161,26 @@ interface ModuleLoader<T extends Module> {
     getChildModules(): T[];
 }
 
-type SlashCommandModule = Evt<CommandInteraction> & {
+type SlashCommandModule = {
     name: string;
     builder: SlashCommandBuilder | SlashCommandSubcommandBuilder | Pick<SlashCommandBuilder, "toJSON">;
+    onCommand(interaction: CommandInteraction);
 }
-type EventModule = {
-
+type EventModule = Named & Evt<any>;
+type SuggestionEventModule = Named<SuggestionEvent> & {
+    onSuggestionEvent(evt: any);
 }
-export type Module = SlashCommandModule | EventModule;
+type SuggestionEvent = "suggestionCreate";
+type Module = SlashCommandModule | EventModule | SuggestionEventModule;
 
-export {ModuleLoaderQueue, ModuleLoader, SlashCommandModule, SlashCommandModuleLoader, EventModule};
+export {
+    Module,
+    ModuleLoaderQueue,
+    ModuleLoader,
+    SlashCommandModule,
+    SlashCommandModuleLoader,
+    EventModule,
+    EventModuleLoader,
+    SuggestionEvent,
+    SuggestionEventModuleLoader
+};

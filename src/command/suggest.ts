@@ -7,7 +7,7 @@ const module: SlashCommandModule = {
     builder: new SlashCommandBuilder()
         .setName("suggest")
         .setDescription("Creates a new suggestion."),
-    on(evt: CommandInteraction) {
+    onCommand(evt: CommandInteraction) {
         // TODO
     }
 }

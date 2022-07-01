@@ -1,4 +1,7 @@
 export const nonNull: (arg: any) => boolean = (arg) => arg != null;
+export type Named<T = string> = {
+    name: T;
+}
 export type Evt<T> = {
     on(evt: T);
 }
@@ -21,4 +24,5 @@ export class ErrorAwareQueue<T> {
     }
 }
 export type Nullable<T> = T | null;
+export type MayUndefined<T> = T | undefined;
 type ErrorLoggingTask = () => Nullable<string> | Promise<Nullable<string>>;

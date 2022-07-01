@@ -16,7 +16,7 @@
     "discord.js": "^13.6.0",
     "typescript": "^4.6.4",
     "yaml": "^2.0.1",
-    "zortik-common-libs": "^1.0.5"
+    "zortik-common-libs": "^1.0.7"
   },
   "devDependencies": {
     "@tsconfig/node16": "^1.0.2",

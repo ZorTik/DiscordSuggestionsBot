@@ -13,6 +13,6 @@ const rest = new REST({version: "9"});
 rest.setToken(token);
 const bot = new SuggestionsBot(client);
 client.login(token).then(() => {
-    client.guilds.cache.forEach(g => bot.loadGuild(g));
+    client.guilds.cache.forEach(g => bot.load(g));
 });
 export {client, bot, rest};
