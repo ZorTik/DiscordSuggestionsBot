@@ -1,7 +1,11 @@
 import * as fs from "fs";
 import {ErrorAwareQueue, Evt, nonNull, Nullable} from "./util";
 import {SlashCommandBuilder, SlashCommandSubcommandBuilder} from "@discordjs/builders";
-import {CommandInteraction} from "discord.js";
+import {CommandInteraction, Guild} from "discord.js";
+import {Registry} from "zortik-common-libs";
+import {REST} from "@discordjs/rest";
+import {client, rest} from "./app";
+import {Routes} from "discord-api-types/v9";
 
 class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
     private readonly path: string;
@@ -43,8 +47,12 @@ class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
 }
 
 class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> {
-    constructor(path: string) {
+    private readonly guild: Guild;
+    private readonly rest: REST;
+    constructor(path: string, client: Guild, rest_: REST = rest) {
         super(path);
+        this.guild = client;
+        this.rest = rest_;
     }
 
     async load(): Promise<Nullable<string>> {
@@ -54,8 +62,8 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
         }
         let validModules = this.getChildModules().filter(SlashCommandModuleLoader.isValid);
         if(validModules.length > 0) {
-            // Push commands to the API.
-            let mainCommandBuilders = new Map(validModules
+            // Load command builders.
+            const mainCommandBuilders = new Map(validModules
                 .filter(module => nonNull(<Pick<SlashCommandBuilder, "toJSON">>module.builder))
                 .map(module => [module.name, module.builder]));
             validModules.filter(module => module.builder instanceof SlashCommandSubcommandBuilder)
@@ -69,6 +77,10 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
                             .addSubcommand(<SlashCommandSubcommandBuilder>module.builder));
                     }
                 });
+            // Push commands to the API.
+            await rest.put(Routes.applicationGuildCommands(client.application.id, this.guild.id), {
+                body: Array.from(mainCommandBuilders.values()).map(builder => builder.toJSON())
+            }).catch(ex => console.error(ex));
         }
         return loadErr;
     }
@@ -78,8 +90,8 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
     }
 }
 
-class ModuleLoaderQueue extends ErrorAwareQueue<Module> implements ModuleLoader<Module> {
-    private readonly modules: Module[];
+class ModuleLoaderQueue extends ErrorAwareQueue<Module> implements ModuleLoader<Module>, Registry<Module> {
+    readonly modules: Module[];
     constructor(loaders: ModuleLoader<any>[] = []) {
         super(loaders.map(loader => async () => {
             const err = await loader.load();
@@ -95,12 +107,23 @@ class ModuleLoaderQueue extends ErrorAwareQueue<Module> implements ModuleLoader<
     getChildModules(): Module[] {
         return this.modules;
     }
+    first(pred: (arg0: Module) => boolean): Module | null {
+        return this.all().find(pred) || null;
+    }
+
+    allBy(pred: (arg0: Module) => boolean): Module[] {
+        return this.all().filter(pred);
+    }
+    all(): Module[] {
+        return this.getChildModules();
+    }
 }
 
 interface ModuleLoader<T extends Module> {
     load(): Promise<Nullable<string>>;
     getChildModules(): T[];
 }
+
 type SlashCommandModule = Evt<CommandInteraction> & {
     name: string;
     builder: SlashCommandBuilder | SlashCommandSubcommandBuilder | Pick<SlashCommandBuilder, "toJSON">;
@@ -109,7 +132,5 @@ type EventModule = {
 
 }
 export type Module = SlashCommandModule | EventModule;
-const loader = new ModuleLoaderQueue([
-    // TODO: Module loaders
-])
-export {loader};
+
+export {ModuleLoaderQueue, ModuleLoader, SlashCommandModule, SlashCommandModuleLoader, EventModule};
