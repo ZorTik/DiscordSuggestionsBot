@@ -26,9 +26,11 @@ class GuildDatabase extends JsonFileMap {
 
 class SuggestionsGuild {
     readonly id: string;
+    readonly suggestionsChannelId: string;
     readonly suggestions: Suggestion[];
     constructor(data: SuggestionsGuildData) {
         this.id = data.id;
+        this.suggestionsChannelId = data.suggestionsChannelId;
         this.suggestions = data.suggestions.map(d => new Suggestion(d));
     }
 }
@@ -41,11 +43,19 @@ class Suggestion {
 
 type SuggestionsGuildData = {
     id: string;
+    suggestionsChannelId: string;
     suggestions: SuggestionData[];
 }
 
 type SuggestionData = {
-
+    messageId: string;
+    title: string;
+    description: string;
 }
 
-export {GuildDatabase, Suggestion};
+export {
+    GuildDatabase,
+    SuggestionsGuild,
+    Suggestion,
+    SuggestionData
+};
