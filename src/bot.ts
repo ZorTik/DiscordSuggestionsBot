@@ -1,9 +1,18 @@
-import {EventModuleLoader, Module, ModuleLoaderQueue, SlashCommandModuleLoader, SuggestionEvent} from "./loader";
-import {Client, Guild, TextChannel} from "discord.js";
-import {BgFlux, Evt, guildId, GuildIdentity, MayUndefined, nonNull} from "./util";
+import {
+    EventModuleLoader,
+    Module,
+    ModuleLoaderQueue,
+    SlashCommandModuleLoader,
+    SuggestionEvent,
+    SuggestionEventModuleLoader
+} from "./loader";
+import {Client, Guild, GuildMember, MessageEmbed, TextChannel} from "discord.js";
+import {BgFlux, Evt, guildId, GuildIdentity, MayUndefined, nonNull, Nullable} from "./util";
 import {GuildDatabase, Suggestion, SuggestionData, SuggestionsGuild} from "./data";
 import * as fs from "fs";
-import { EventEmitter } from "zortik-common-libs";
+import {EventEmitter} from "./common";
+import {COLOR_INFO} from "./const";
+import {messages} from "./app";
 
 class SuggestionsBot extends EventEmitter<SuggestionEvent> {
     readonly client: Client;
@@ -13,16 +22,19 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
     constructor(client: Client, dataFile: string = 'data.json') {
         super();
         this.client = client;
+        this.moduleRegistries = [];
         this.client.on('guildCreate', async g => {
-            await this.load(g);
+            const cached = client.guilds.cache.find(g => g.id === guildId(g));
+            await this.load(nonNull(cached) ? cached!! : g);
         });
         if(!fs.existsSync(dataFile)) fs.writeFileSync(dataFile, '{}');
         this.database = new GuildDatabase(dataFile);
+        this.database.load();
     }
-    async setup(guild: GuildIdentity, cons: ((SuggestionsGuildSetup) => void) | null = null): Promise<boolean> {
+    async setup(guild: GuildIdentity, cons: ((setup: SuggestionsGuildSetup) => void) | null = null): Promise<boolean> {
         if(this.isReady(guild)) return true;
         let setup = this.setups.find(s => s.guildId === guildId(guild));
-        if(!nonNull(setup)) {
+        if(setup == null) {
             this.setups.push(setup = {
                 guildId: guildId(guild)
             });
@@ -31,29 +43,32 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
             cons(setup);
             return true;
         }
-        if(!Object.getOwnPropertyNames(setup).some(key => setup[key] == null)) {
+        if(setup.suggestionsChannelId != null) {
             this.database.guilds.push(new SuggestionsGuild({
                 id: guildId(guild),
                 suggestionsChannelId: setup.suggestionsChannelId,
                 suggestions: []
             }));
-            return this.database.save();
+            this.database.saveGuilds();
+            return true;
         }
         return false;
     }
-    private async load(guild: Guild): Promise<string> {
+    async load(guild: Guild): Promise<Nullable<string>> {
+        const preview = await guild.fetchPreview();
         let prevIndex = this.moduleRegistries.findIndex(r => r.guild.id === guild.id);
         if(prevIndex > -1) {
             this.moduleRegistries.slice(prevIndex, 1);
         }
-        this.database.load(guild.id);
-        const moduleRegistry: ModuleRegistry = new ModuleRegistry(guild);
-        let err: string;
+        const moduleRegistry: ModuleRegistry = new ModuleRegistry(guild, this);
+        let err: Nullable<string>;
         if((err = await moduleRegistry.load()) == null) {
             this.moduleRegistries.push(moduleRegistry);
-            console.log(`Loaded modules for ${guild.name}!`);
-            if(!this.isReady(guild)) {
-                console.warn(`Guild ${guild.name} is not ready! Please setup it with /suggestionssetup.`);
+            console.log(`Loaded modules for ${preview.name}!`);
+            if(this.isReady(guild)) {
+                this.emit('guildLoad', guild);
+            } else {
+                console.warn(`Guild ${preview.name} is not ready! Please setup it with /suggestionssetup.`);
             }
         } else {
             const guilds = this.database.guilds;
@@ -70,12 +85,13 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         const data: SuggestionData = {
             messageId: "",
             title: requirements.title,
-            description: requirements.description
+            description: requirements.description,
+            authorId: requirements.author.id,
         };
         const flux = new BgFlux(() => {
             if(data.messageId.length == 0) return null;
             const suggestion = new Suggestion(data);
-            this.database.guild(guild).suggestions.push(suggestion);
+            this.database.guild(guild)?.suggestions.push(suggestion);
             if(this.database.save()) {
                 this.emit('suggestionCreate', suggestion);
                 return suggestion;
@@ -85,7 +101,19 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         flux.tasks.push(async () => {
             const channel = await guild.channels.fetch(guildData.suggestionsChannelId);
             if(channel != null && channel instanceof TextChannel) {
-                const message = await channel.send(""/* TODO: Form message. */);
+                const message = await channel.send({
+                    embeds: [
+                        new MessageEmbed()
+                            .setColor(COLOR_INFO)
+                            .setTitle(data.title)
+                            .addField(
+                                messages.getStr('suggestion.description').orElse(""),
+                                "```" + data.description + "```"
+                            )
+                            .setFooter(`${messages.getStr('suggestion.footer').orElse("")
+                                .replace("{}", requirements.author.toString)}`)
+                    ]
+                });
                 data.messageId = message.id;
             }
             return null;
@@ -109,16 +137,17 @@ type SuggestionsGuildSetup = {
 class ModuleRegistry extends ModuleLoaderQueue {
     readonly guild: Guild;
 
-    constructor(guild: Guild) {
+    constructor(guild: Guild, bot: SuggestionsBot) {
         super([
             new SlashCommandModuleLoader("src/command", guild),
-            new EventModuleLoader("src/event", guild.client)
+            new EventModuleLoader("src/event", guild.client),
+            new SuggestionEventModuleLoader("src/event", bot)
         ]);
         this.guild = guild;
     }
 
-    findModules<T extends Module>(): T[] {
-        return this.allBy(m => nonNull(<T>m))
+    findModules<T extends Module>(pred: (m: T) => boolean = () => true): T[] {
+        return this.allBy(m => nonNull(<T>m) && pred(<T>m))
             .map(m => <T>m);
     }
 
@@ -127,6 +156,7 @@ class ModuleRegistry extends ModuleLoaderQueue {
 type SuggestionRequirements = {
     title: string;
     description: string;
+    author: GuildMember;
 }
 
-export {SuggestionsBot};
+export {SuggestionsBot, SuggestionsGuildSetup};

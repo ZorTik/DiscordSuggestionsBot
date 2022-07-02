@@ -1,12 +1,12 @@
 import * as fs from "fs";
 import {ErrorAwareQueue, Evt, Named, nonNull, Nullable} from "./util";
 import {SlashCommandBuilder, SlashCommandSubcommandBuilder} from "@discordjs/builders";
-import {Client, CommandInteraction, Guild} from "discord.js";
-import {Registry} from "zortik-common-libs";
+import {Client, ClientEvents, CommandInteraction, Guild} from "discord.js";
 import {REST} from "@discordjs/rest";
 import {client, rest} from "./app";
 import {Routes} from "discord-api-types/v9";
 import {SuggestionsBot} from "./bot";
+import {Registry} from "./common";
 
 class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
     private readonly path: string;
@@ -17,11 +17,13 @@ class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
     }
     async load(): Promise<Nullable<string>> {
         this.childModules.splice(0, this.childModules.length);
-        let modules: T[];
+        let modules: T[] = [];
         try {
             modules = await this.loadAtPath(this.path);
         } catch(ex) {
-            return ex;
+            if(typeof ex === "string") {
+                return ex;
+            }
         }
         this.childModules.push(...modules);
         return null;
@@ -33,17 +35,26 @@ class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
         const stat = fs.statSync(path);
         const res: T[] = [];
         if(stat.isDirectory()) {
-            res.push(...(await Promise.all(fs.readdirSync(path)
-                    .map(f => (this.loadAtPath(path + "/" + f)))))
-                    .flatMap(m => m).map(m => <T>m).filter(nonNull)
-                );
+            for(let fileName of fs.readdirSync(path)) {
+                const modules = await this.loadAtPath(path + "/" + fileName);
+                res.push(...modules);
+            }
         } else {
-            let module = <T>(await import(path));
-            if(module != null) {
-                res.push(module);
+            try {
+                let module = <T>(await import(FileTreeModuleLoader.removeExtension(path)
+                    .replace("src/", "./")));
+                if(module != null) {
+                    res.push(module);
+                }
+            } catch(err) {
+                console.error(err);
+                console.log("Path of error: " + path);
             }
         }
         return res;
+    }
+    private static removeExtension(path: string): string {
+        return path.includes(".") ? path.substring(0, path.lastIndexOf(".")) : path;
     }
 }
 
@@ -65,7 +76,7 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
         if(validModules.length > 0) {
             // Load command builders.
             const mainCommandBuilders = new Map(validModules
-                .filter(module => nonNull(<Pick<SlashCommandBuilder, "toJSON">>module.builder))
+                .filter(module => nonNull(<SlashCommandBuilder>module.builder))
                 .map(module => [module.name, module.builder]));
             validModules.filter(module => module.builder instanceof SlashCommandSubcommandBuilder)
                 .forEach(module => {
@@ -79,7 +90,7 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
                     }
                 });
             // Push commands to the API.
-            await rest.put(Routes.applicationGuildCommands(client.application.id, this.guild.id), {
+            await rest.put(Routes.applicationGuildCommands(client.application!!.id, this.guild.id), {
                 body: Array.from(mainCommandBuilders.values()).map(builder => builder.toJSON())
             }).catch(ex => console.error(ex));
         }
@@ -103,9 +114,17 @@ class EventModuleLoader extends FileTreeModuleLoader<EventModule> {
             return loadErr;
         }
         const eventModules = this.getChildModules();
-        eventModules.forEach(module => {
-            client.on(module.name, module.on)
-        });
+        for(let module of eventModules) {
+            try {
+                const res = client.on(module.name, module.on);
+                if(res instanceof Promise) {
+                    await res;
+                }
+            } catch(ex) {
+                console.error(ex);
+            }
+        }
+        return null;
     }
 }
 
@@ -124,11 +143,12 @@ class SuggestionEventModuleLoader extends FileTreeModuleLoader<SuggestionEventMo
         eventModules.forEach(module => {
             this.bot.on(module.name, module.onSuggestionEvent);
         });
+        return null;
     }
 }
 
-class ModuleLoaderQueue extends ErrorAwareQueue<Module> implements ModuleLoader<Module>, Registry<Module> {
-    readonly modules: Module[];
+class ModuleLoaderQueue extends ErrorAwareQueue implements ModuleLoader<Module>, Registry<Module> {
+    readonly modules: Module[] = [];
     constructor(loaders: ModuleLoader<any>[] = []) {
         super(loaders.map(loader => async () => {
             const err = await loader.load();
@@ -138,7 +158,7 @@ class ModuleLoaderQueue extends ErrorAwareQueue<Module> implements ModuleLoader<
             return err;
         }));
     }
-    async load(): Promise<string> {
+    async load(): Promise<Nullable<string>> {
         return await this.dispatchAll();
     }
     getChildModules(): Module[] {
@@ -164,13 +184,13 @@ interface ModuleLoader<T extends Module> {
 type SlashCommandModule = {
     name: string;
     builder: SlashCommandBuilder | SlashCommandSubcommandBuilder | Pick<SlashCommandBuilder, "toJSON">;
-    onCommand(interaction: CommandInteraction);
+    onCommand(interaction: CommandInteraction): Promise<void> | void;
 }
-type EventModule = Named & Evt<any>;
+type EventModule<K extends keyof ClientEvents = any> = Named<K> & Evt<ClientEvents[K][0]>;
 type SuggestionEventModule = Named<SuggestionEvent> & {
-    onSuggestionEvent(evt: any);
+    onSuggestionEvent(evt: any): any;
 }
-type SuggestionEvent = "suggestionCreate";
+type SuggestionEvent = 'suggestionCreate' | 'guildLoad';
 type Module = SlashCommandModule | EventModule | SuggestionEventModule;
 
 export {

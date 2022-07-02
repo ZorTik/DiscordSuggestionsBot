@@ -1,0 +1,15 @@
+success: "Success!"
+error: "Error!"
+suggestion-created: "Suggestion has been created!"
+permissions-set: "Group of user {} has been set to {}!"
+permissions-removed: "Removed all permissions from {}!"
+not-text-channel: "This channel is not a text channel."
+unexpected-error: "An unexpected error occurred."
+no-permission: "You do not have enough permissions to do this."
+group-not-found: "Group not found."
+setup:
+  suggestions-channel-set: "Suggestions channel has been set!"
+  finish: "Setup has been finished! You can use bot now."
+suggestion:
+  content: "Suggestion Content"
+  footer: "Suggestion created by {}"
