@@ -1,6 +1,6 @@
 import {JsonFileMap} from "./common";
 import {Guild, Message, MessageActionRow, MessageButton, TextChannel} from "discord.js";
-import {MayUndefined, nonNull, Nullable} from "./util";
+import {GuildIdentity, MayUndefined, nonNull, Nullable} from "./util";
 import {PermissionGroup, PermissionHolder} from "./common/permissions";
 import {getGroups} from "./api/api";
 import {bot, client} from "./app";
@@ -38,7 +38,6 @@ class GuildDatabase extends JsonFileMap {
                 ? (<PermissionGroup>u.permissions).name : ""
             }));
     }
-
     load(key: Nullable<string> = null) {
         if(key == null) {
             this.guilds.slice(0, this.guilds.length);
@@ -58,7 +57,7 @@ class GuildDatabase extends JsonFileMap {
             }
         }
     }
-    guild(guild: Guild | string): MayUndefined<SuggestionsGuild> {
+    guild(guild: GuildIdentity): MayUndefined<SuggestionsGuild> {
         return this.guilds.find(g => g.id === (guild instanceof Guild ? guild.id : <string>guild))
     }
     user(id: string): SuggestionsUser {

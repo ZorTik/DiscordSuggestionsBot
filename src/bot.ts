@@ -31,6 +31,17 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         this.database = new GuildDatabase(dataFile);
         this.database.load();
     }
+
+    /**
+     * Performs initial setup or modifies existing setup data.
+     * If null is set as guild setup consumer, an existing
+     * setup is get and validated.
+     *
+     * @param guild The guild to setup.
+     * @param cons The consumer to use for setup.
+     *
+     * @returns Current action success state.
+     */
     async setup(guild: GuildIdentity, cons: ((setup: SuggestionsGuildSetup) => void) | null = null): Promise<boolean> {
         if(this.isReady(guild)) return true;
         let setup = this.setups.find(s => s.guildId === guildId(guild));
@@ -54,6 +65,15 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         }
         return false;
     }
+
+    /**
+     * Loads all modules for the given guild and performs
+     * some initial tasks.
+     *
+     * @param guild The guild to load modules for.
+     *
+     * @returns Promise of error or promise containing null if no error occurred.
+     */
     async load(guild: Guild): Promise<Nullable<string>> {
         const preview = await guild.fetchPreview();
         let prevIndex = this.moduleRegistries.findIndex(r => r.guild.id === guild.id);
@@ -79,6 +99,17 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         }
         return err;
     }
+
+    /**
+     * Constructs new task flux that tries to create new suggestion
+     * based on provided requirements. Task queue contains task for
+     * suggestion message creation.
+     *
+     * @param guild The guild to create suggestion for.
+     * @param requirements The requirements to create suggestion.
+     *
+     * @returns Task flux that creates new suggestion.
+     */
     suggest(guild: Guild, requirements: SuggestionRequirements): BgFlux<Suggestion> {
         if(!this.isReady(guild)) return new BgFlux<Suggestion>(() => null);
         const guildData = this.database.guild(guild)!!;
@@ -112,6 +143,14 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         });
         return flux;
     }
+
+    /**
+     * Constructs embed for suggestion based on provided data.
+     *
+     * @param data The data to construct embed from.
+     *
+     * @returns Promise of embed.
+     */
     async constructSuggestionEmbed(data: Suggestion | SuggestionData): Promise<MessageEmbed> {
         const author = await client.users.fetch(data.authorId);
         const authorUsername = nonNull(author) ? author.username : "Unknown";
@@ -128,16 +167,49 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
                 }
             ]);
     }
+
+    /**
+     * Tries to find module registry based on guild.
+     *
+     * @param guild The guild to find module registry for.
+     *
+     * @returns Module registry or undefined if not found.
+     */
     modules(guild: GuildIdentity): MayUndefined<ModuleRegistry> {
         let guildId = (typeof guild === 'string') ? guild : guild.id;
         return this.moduleRegistries.find(r => r.guild.id === guildId);
     }
-    isReady(guild: GuildIdentity) {
+
+    /**
+     * Check if given guild is ready for use. A.k.a. if given guild
+     * has completed setup.
+     *
+     * @param guild The guild to check.
+     *
+     * @returns True if guild is ready, false otherwise.
+     */
+    isReady(guild: GuildIdentity): boolean {
         return this.database.guild(guild) != null;
     }
+
+    /**
+     * Checks if given message/reference belongs to a suggestion.
+     *
+     * @param data The data to check.
+     *
+     * @returns True if belongs to a suggestion, false otherwise.
+     */
     isSuggestion(data: Message | GuildMessageReference): boolean {
         return nonNull(this.getSuggestion(data));
     }
+
+    /**
+     * Gets suggestion based on message/reference.
+     *
+     * @param data The data to get suggestion for.
+     *
+     * @returns Suggestion or undefined if not found.
+     */
     getSuggestion(data: Message | GuildMessageReference): MayUndefined<Suggestion> {
         const guild = this.database.guild(data.guildId || "");
         if(nonNull(guild)) {
@@ -165,6 +237,14 @@ class ModuleRegistry extends ModuleLoaderQueue {
         this.guild = guild;
     }
 
+    /**
+     * Performs search for modules based on given generic
+     * type and optional predicate.
+     *
+     * @param pred The predicate to use for search.
+     *
+     * @returns List of modules that match.
+     */
     findModules<T extends Module>(pred: (m: T) => boolean = () => true): T[] {
         return this.allBy(m => nonNull(<T>m) && pred(<T>m))
             .map(m => <T>m);
