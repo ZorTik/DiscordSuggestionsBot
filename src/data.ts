@@ -1,7 +1,8 @@
 import {JsonFileMap} from "./common";
 import {Guild} from "discord.js";
 import {MayUndefined, nonNull, Nullable} from "./util";
-import {PermissionHolder} from "./common/permissions";
+import {PermissionGroup, PermissionHolder} from "./common/permissions";
+import {getGroups} from "./api/api";
 
 class GuildDatabase extends JsonFileMap {
     readonly guilds: SuggestionsGuild[];
@@ -12,12 +13,25 @@ class GuildDatabase extends JsonFileMap {
         this.users = [];
     }
     saveGuilds() {
-        this.setByKey("guilds", this.guilds);
+        this.setByKey("guilds", this.guilds
+            .map(g => <SuggestionsGuildData> {
+                id: g.id,
+                suggestionsChannelId: g.suggestionsChannelId,
+                suggestions: g.suggestions
+                    .map((s: Suggestion) => <SuggestionData> {
+                        messageId: s.messageId,
+                        title: s.title,
+                        description: s.description,
+                        authorId: s.authorId,
+                    })
+            }));
     }
     saveUsers() {
         this.setByKey("users", this.users.filter(u => u.groups.length > 0 || u.permissions.nodes.length > 0)
             .map(u => <SuggestionsUserData> {
-                id: u.id
+                id: u.id,
+                group: nonNull((<PermissionGroup>u.permissions))
+                ? (<PermissionGroup>u.permissions).name : ""
             }));
     }
 
@@ -47,7 +61,8 @@ class GuildDatabase extends JsonFileMap {
         let user = this.users.find(u => u.id === id);
         if(user == null) {
             this.users.push(user = new SuggestionsUser({
-                id: id
+                id: id,
+                group: ""
             }));
         }
         return user;
@@ -70,12 +85,23 @@ class SuggestionsUser extends PermissionHolder {
     constructor(data: SuggestionsUserData) {
         super();
         this.id = data.id;
+        const group = getGroups().find(g => g.name === data.group);
+        this.permissions = group != null ? group : {
+            nodes: []
+        };
     }
 }
 
 class Suggestion {
+    readonly messageId: string;
+    title: string;
+    description: string;
+    authorId: string;
     constructor(data: SuggestionData) {
-
+        this.messageId = data.messageId;
+        this.title = data.title;
+        this.description = data.description;
+        this.authorId = data.authorId;
     }
 }
 
@@ -87,6 +113,7 @@ type SuggestionsGuildData = {
 
 type SuggestionsUserData = {
     id: string;
+    group: string;
 }
 
 type SuggestionData = {

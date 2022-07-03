@@ -92,11 +92,9 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
             if(data.messageId.length == 0) return null;
             const suggestion = new Suggestion(data);
             this.database.guild(guild)?.suggestions.push(suggestion);
-            if(this.database.save()) {
-                this.emit('suggestionCreate', suggestion);
-                return suggestion;
-            }
-            return null;
+            this.database.saveGuilds()
+            this.emit('suggestionCreate', suggestion);
+            return suggestion;
         });
         flux.tasks.push(async () => {
             const channel = await guild.channels.fetch(guildData.suggestionsChannelId);
@@ -106,12 +104,15 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
                         new MessageEmbed()
                             .setColor(COLOR_INFO)
                             .setTitle(data.title)
-                            .addField(
-                                messages.getStr('suggestion.description').orElse(""),
-                                "```" + data.description + "```"
-                            )
-                            .setFooter(`${messages.getStr('suggestion.footer').orElse("")
-                                .replace("{}", requirements.author.toString)}`)
+                            .setDescription(messages.getStr("suggestion.description").orElse("")
+                                .replace("{}", requirements.author.user.username))
+                            .setFields([
+                                {
+                                    name: messages.getStr('suggestion.content').orElse("New Suggestion"),
+                                    value: "```" + data.description + "```",
+                                    inline: true
+                                }
+                            ])
                     ]
                 });
                 data.messageId = message.id;

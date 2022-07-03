@@ -1,6 +1,6 @@
 import {SlashCommandModule} from "../../loader";
 import {SlashCommandStringOption, SlashCommandSubcommandBuilder, SlashCommandUserOption} from "@discordjs/builders";
-import {CommandInteraction} from "discord.js";
+import {CommandInteraction, GuildMember} from "discord.js";
 import {PermissionGroup} from "../../common/permissions";
 import {bot, messages} from "../../app";
 import {error, success} from "../../util";
@@ -13,9 +13,11 @@ export = <SlashCommandModule> {
         .setDescription("Sets a user's group.")
         .addUserOption(new SlashCommandUserOption()
             .setName("user")
+            .setDescription("The user to set the group for.")
             .setRequired(true))
         .addStringOption(new SlashCommandStringOption()
             .setName("group")
+            .setDescription("The group to set the user to.")
             .addChoices(...getGroups()
                 .map((g: PermissionGroup) => {
                     return {
@@ -25,6 +27,11 @@ export = <SlashCommandModule> {
                 }))
             .setRequired(false)),
     async onCommand(evt: CommandInteraction) {
+        if(evt.member == null || !(evt.member instanceof GuildMember)) return;
+        if(!evt.member.permissions.has("ADMINISTRATOR")) {
+            await error(evt, messages.getStr("no-permission").orElse(""));
+            return;
+        }
         const user = evt.options.getUser("user")!!;
         const suggestionsUser = bot.database.user(user.id);
         const groupId = evt.options.getString("group");

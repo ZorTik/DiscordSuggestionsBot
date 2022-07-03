@@ -87,7 +87,7 @@ class BgFlux<T> extends ErrorAwareQueue {
     }
     async execute(): Promise<Nullable<T>> {
         const errNullable = await this.dispatchAll();
-        return nonNull(errNullable) ? this.value(this) : null;
+        return !nonNull(errNullable) ? this.value(this) : null;
     }
 }
 type Nullable<T> = T | null;

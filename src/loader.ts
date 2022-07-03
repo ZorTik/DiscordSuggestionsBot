@@ -37,7 +37,7 @@ class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
         if(stat.isDirectory()) {
             for(let fileName of fs.readdirSync(path)) {
                 const modules = await this.loadAtPath(path + "/" + fileName);
-                res.push(...modules);
+                modules.forEach(m => res.push(m));
             }
         } else {
             try {
@@ -78,7 +78,7 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
             const mainCommandBuilders = new Map(validModules
                 .filter(module => nonNull(<SlashCommandBuilder>module.builder))
                 .map(module => [module.name, module.builder]));
-            validModules.filter(module => module.builder instanceof SlashCommandSubcommandBuilder)
+            validModules.filter(module => module.builder instanceof SlashCommandSubcommandBuilder && module.name.includes("."))
                 .forEach(module => {
                     const mainCommandName = module.name.split(".")[0];
                     let mainCommandBuilder = mainCommandBuilders.get(mainCommandName) || new SlashCommandBuilder()
@@ -151,11 +151,16 @@ class ModuleLoaderQueue extends ErrorAwareQueue implements ModuleLoader<Module>,
     readonly modules: Module[] = [];
     constructor(loaders: ModuleLoader<any>[] = []) {
         super(loaders.map(loader => async () => {
-            const err = await loader.load();
-            if(err == null) {
-                this.modules.push(...loader.getChildModules());
+            try {
+                const err = await loader.load();
+                if(err == null) {
+                    this.modules.push(...loader.getChildModules());
+                }
+                return err;
+            } catch(err) {
+                console.error(err);
+                return "Error loading module: " + err;
             }
-            return err;
         }));
     }
     async load(): Promise<Nullable<string>> {
