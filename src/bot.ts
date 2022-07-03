@@ -6,13 +6,13 @@ import {
     SuggestionEvent,
     SuggestionEventModuleLoader
 } from "./loader";
-import {Client, Guild, GuildMember, MessageEmbed, TextChannel} from "discord.js";
-import {BgFlux, Evt, guildId, GuildIdentity, MayUndefined, nonNull, Nullable} from "./util";
+import {Client, Guild, GuildMember, Message, MessageEmbed, TextChannel} from "discord.js";
+import {BgFlux, Evt, guildId, GuildIdentity, GuildMessageReference, MayUndefined, nonNull, Nullable} from "./util";
 import {GuildDatabase, Suggestion, SuggestionData, SuggestionsGuild} from "./data";
 import * as fs from "fs";
 import {EventEmitter} from "./common";
 import {COLOR_INFO} from "./const";
-import {messages} from "./app";
+import {client, messages} from "./app";
 
 class SuggestionsBot extends EventEmitter<SuggestionEvent> {
     readonly client: Client;
@@ -83,10 +83,12 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         if(!this.isReady(guild)) return new BgFlux<Suggestion>(() => null);
         const guildData = this.database.guild(guild)!!;
         const data: SuggestionData = {
+            guildId: guild.id,
             messageId: "",
             title: requirements.title,
             description: requirements.description,
             authorId: requirements.author.id,
+            other: {}
         };
         const flux = new BgFlux(() => {
             if(data.messageId.length == 0) return null;
@@ -101,18 +103,7 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
             if(channel != null && channel instanceof TextChannel) {
                 const message = await channel.send({
                     embeds: [
-                        new MessageEmbed()
-                            .setColor(COLOR_INFO)
-                            .setTitle(data.title)
-                            .setDescription(messages.getStr("suggestion.description").orElse("")
-                                .replace("{}", requirements.author.user.username))
-                            .setFields([
-                                {
-                                    name: messages.getStr('suggestion.content').orElse("New Suggestion"),
-                                    value: "```" + data.description + "```",
-                                    inline: true
-                                }
-                            ])
+                        await this.constructSuggestionEmbed(data)
                     ]
                 });
                 data.messageId = message.id;
@@ -121,12 +112,39 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         });
         return flux;
     }
+    async constructSuggestionEmbed(data: Suggestion | SuggestionData): Promise<MessageEmbed> {
+        const author = await client.users.fetch(data.authorId);
+        const authorUsername = nonNull(author) ? author.username : "Unknown";
+        return new MessageEmbed()
+            .setColor(COLOR_INFO)
+            .setTitle(data.title)
+            .setDescription(messages.getStr("suggestion.description").orElse("")
+                .replace("{}", authorUsername))
+            .setFields([
+                {
+                    name: messages.getStr('suggestion.content').orElse("New Suggestion"),
+                    value: "```" + data.description + "```",
+                    inline: true
+                }
+            ]);
+    }
     modules(guild: GuildIdentity): MayUndefined<ModuleRegistry> {
         let guildId = (typeof guild === 'string') ? guild : guild.id;
         return this.moduleRegistries.find(r => r.guild.id === guildId);
     }
     isReady(guild: GuildIdentity) {
         return this.database.guild(guild) != null;
+    }
+    isSuggestion(data: Message | GuildMessageReference): boolean {
+        return nonNull(this.getSuggestion(data));
+    }
+    getSuggestion(data: Message | GuildMessageReference): MayUndefined<Suggestion> {
+        const guild = this.database.guild(data.guildId || "");
+        if(nonNull(guild)) {
+            return guild!!.suggestions.find(s => s.messageId === (data instanceof Message
+            ? data.id : data.messageId));
+        }
+        return undefined;
     }
 }
 

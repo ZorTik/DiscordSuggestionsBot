@@ -94,6 +94,10 @@ type Nullable<T> = T | null;
 type MayUndefined<T> = T | undefined;
 type ErrorLoggingTask = () => Nullable<string> | Promise<Nullable<string>>;
 type GuildIdentity = Guild | string;
+type GuildMessageReference = {
+    guildId: string;
+    messageId: string;
+}
 
 export {
     nonNull,
@@ -105,6 +109,7 @@ export {
     Nullable,
     MayUndefined,
     GuildIdentity,
+    GuildMessageReference,
     success,
     error,
     embed,

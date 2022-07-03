@@ -116,9 +116,8 @@ class EventModuleLoader extends FileTreeModuleLoader<EventModule> {
         const eventModules = this.getChildModules();
         for(let module of eventModules) {
             try {
-                const res = client.on(module.name, module.on);
-                if(res instanceof Promise) {
-                    await res;
+                if(nonNull(module.name) && nonNull(module.on)) {
+                    client.on(module.name, module.on);
                 }
             } catch(ex) {
                 console.error(ex);
@@ -195,7 +194,7 @@ type EventModule<K extends keyof ClientEvents = any> = Named<K> & Evt<ClientEven
 type SuggestionEventModule = Named<SuggestionEvent> & {
     onSuggestionEvent(evt: any): any;
 }
-type SuggestionEvent = 'suggestionCreate' | 'guildLoad';
+type SuggestionEvent = 'suggestionCreate' | 'suggestionApproveState' | 'guildLoad';
 type Module = SlashCommandModule | EventModule | SuggestionEventModule;
 
 export {
@@ -207,5 +206,6 @@ export {
     EventModule,
     EventModuleLoader,
     SuggestionEvent,
+    SuggestionEventModule,
     SuggestionEventModuleLoader
 };

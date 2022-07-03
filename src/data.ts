@@ -1,8 +1,10 @@
 import {JsonFileMap} from "./common";
-import {Guild} from "discord.js";
+import {Guild, Message, MessageActionRow, MessageButton, TextChannel} from "discord.js";
 import {MayUndefined, nonNull, Nullable} from "./util";
 import {PermissionGroup, PermissionHolder} from "./common/permissions";
 import {getGroups} from "./api/api";
+import {bot, client} from "./app";
+import {MessageButtonStyles} from "discord.js/typings/enums";
 
 class GuildDatabase extends JsonFileMap {
     readonly guilds: SuggestionsGuild[];
@@ -19,10 +21,12 @@ class GuildDatabase extends JsonFileMap {
                 suggestionsChannelId: g.suggestionsChannelId,
                 suggestions: g.suggestions
                     .map((s: Suggestion) => <SuggestionData> {
+                        guildId: s.guildId,
                         messageId: s.messageId,
                         title: s.title,
                         description: s.description,
                         authorId: s.authorId,
+                        other: s.other
                     })
             }));
     }
@@ -93,15 +97,43 @@ class SuggestionsUser extends PermissionHolder {
 }
 
 class Suggestion {
+    readonly guildId: string;
     readonly messageId: string;
     title: string;
     description: string;
     authorId: string;
+    other: any;
     constructor(data: SuggestionData) {
+        this.guildId = data.guildId;
         this.messageId = data.messageId;
         this.title = data.title;
         this.description = data.description;
         this.authorId = data.authorId;
+        this.other = data.other;
+    }
+
+    setApproved(approved: boolean) {
+        this.other.approved = approved;
+        bot.emit("suggestionApproveState", this);
+    }
+
+    isApproved(): boolean {
+        if(!this.isApprovedOrRejected()) return false;
+        return this.other.approved;
+    }
+
+    isApprovedOrRejected(): boolean {
+        return nonNull(this.other.approved);
+    }
+
+    async toMessage(): Promise<MayUndefined<Message>> {
+        const guild = client.guilds.cache.get(this.guildId);
+        if(guild != null && bot.isReady(guild)) {
+            const channel = await guild.channels.fetch(bot.database.guild(guild)!!.suggestionsChannelId);
+            if(channel != null && channel instanceof TextChannel) {
+                return await channel.messages.fetch(this.messageId);
+            }
+        }
     }
 }
 
@@ -117,10 +149,12 @@ type SuggestionsUserData = {
 }
 
 type SuggestionData = {
+    guildId: string;
     messageId: string;
     title: string;
     description: string;
     authorId: string;
+    other: any;
 }
 
 export {
