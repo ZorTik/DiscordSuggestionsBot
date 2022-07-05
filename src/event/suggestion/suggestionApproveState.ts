@@ -1,6 +1,6 @@
 import {SuggestionEventModule} from "../../loader";
 import {Suggestion} from "../../data";
-import {bot} from "../../app";
+import {bot, messages} from "../../app";
 
 export = <SuggestionEventModule> {
     name: "suggestionApproveState",
@@ -12,7 +12,7 @@ export = <SuggestionEventModule> {
                 // is either approved or rejected.
                 const approved = evt.isApproved();
                 const embed = await bot.constructSuggestionEmbed(evt);
-                embed.setFooter(approved ? "✔ Approved" : "❌ Declined");
+                embed.setFooter(stateStr(approved));
                 await message.edit({
                     embeds: [
                         embed
@@ -22,4 +22,9 @@ export = <SuggestionEventModule> {
             }
         }
     }
+}
+
+function stateStr(approved: boolean): string {
+    return messages.getStr(`suggestion.state.${approved ? "approved" : "declined"}`)
+        .orElse("");
 }

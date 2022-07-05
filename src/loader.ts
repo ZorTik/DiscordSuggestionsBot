@@ -9,42 +9,45 @@ import {SuggestionsBot} from "./bot";
 import {Registry} from "./common";
 
 class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
-    private readonly path: string;
-    private readonly childModules: T[];
+    protected readonly path: string;
+    protected readonly childModules: Map<string, T>;
     constructor(path: string) {
         this.path = path;
-        this.childModules = [];
+        this.childModules = new Map();
     }
-    async load(): Promise<Nullable<string>> {
-        this.childModules.splice(0, this.childModules.length);
-        let modules: T[] = [];
+    async load(pred: (m: T, path: string) => boolean = m => true): Promise<Nullable<string>> {
+        this.childModules.clear();
         try {
-            modules = await this.loadAtPath(this.path);
+            (await this.loadAtPath(this.path))
+                .forEach((m, path) => {
+                    if(pred(m, path)) {
+                        this.childModules.set(path, m);
+                    }
+                });
         } catch(ex) {
             if(typeof ex === "string") {
                 return ex;
             }
         }
-        this.childModules.push(...modules);
         return null;
     }
     getChildModules(): T[] {
-        return this.childModules;
+        return Array.from(this.childModules.values());
     }
-    private async loadAtPath(path: string): Promise<T[]> {
+    private async loadAtPath(path: string): Promise<Map<string, T>> {
         const stat = fs.statSync(path);
-        const res: T[] = [];
+        const res: Map<string, T> = new Map();
         if(stat.isDirectory()) {
             for(let fileName of fs.readdirSync(path)) {
                 const modules = await this.loadAtPath(path + "/" + fileName);
-                modules.forEach(m => res.push(m));
+                modules.forEach((m, path) => res.set(path, m));
             }
         } else {
             try {
                 let module = <T>(await import(FileTreeModuleLoader.removeExtension(path)
                     .replace("src/", "./")));
                 if(module != null) {
-                    res.push(module);
+                    res.set(path, module);
                 }
             } catch(err) {
                 console.error(err);
@@ -55,6 +58,17 @@ class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
     }
     private static removeExtension(path: string): string {
         return path.includes(".") ? path.substring(0, path.lastIndexOf(".")) : path;
+    }
+}
+
+class FileTreeModuleOnceModuleLoader<T extends Module> extends FileTreeModuleLoader<T> {
+    private static readonly LOADED_MODULES: string[] = [];
+    async load(): Promise<Nullable<string>> {
+        const err = await super.load((m, path) => !FileTreeModuleOnceModuleLoader.LOADED_MODULES.includes(path));
+        FileTreeModuleOnceModuleLoader.LOADED_MODULES.push(...Array.from(this.childModules.entries())
+            .map(([path, m]) => path)
+            .filter(path => !FileTreeModuleOnceModuleLoader.LOADED_MODULES.includes(path)));
+        return err;
     }
 }
 
@@ -102,7 +116,7 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
     }
 }
 
-class EventModuleLoader extends FileTreeModuleLoader<EventModule> {
+class EventModuleLoader extends FileTreeModuleOnceModuleLoader<EventModule> {
     private client: Client;
     constructor(path: string, client: Client) {
         super(path);
