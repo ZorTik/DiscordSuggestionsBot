@@ -9,11 +9,11 @@ no-permission: "You do not have enough permissions to do this."
 group-not-found: "Group not found."
 setup:
   suggestions-channel-set: "Suggestions channel has been set!"
+  logs-channel-set: "Logs channel has been set!"
   finish: "Setup has been finished! You can use bot now."
 suggestion:
-  # Can't be empty
-  content: "Suggestion Content"
-  description: "Suggested by {}"
+  description: "Please vote with **Like** or **Dislike** under this message!"
+  footer: "Suggested by {}"
   state:
     approved: "✔ Approved"
     declined: "❌ Declined"

@@ -1,5 +1,5 @@
-import {SuggestionEventModule} from "../../loader";
-import {Suggestion} from "../../data";
+import {SuggestionEventModule} from "../loader";
+import {Suggestion} from "../data";
 import {MessageActionRow, MessageButton} from "discord.js";
 import {MessageButtonStyles} from "discord.js/typings/enums";
 

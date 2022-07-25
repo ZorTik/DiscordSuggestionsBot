@@ -1,7 +1,8 @@
 import {EventModule} from "../../loader";
-import {Interaction, Message} from "discord.js";
+import {GuildMember, Interaction, Message} from "discord.js";
 import {bot} from "../../app";
 import {permissions} from "../../api/api";
+import {Nullable} from "../../common/util";
 
 export = <EventModule<"interactionCreate">> {
     name: "interactionCreate",
@@ -13,7 +14,11 @@ export = <EventModule<"interactionCreate">> {
                 if(suggestion != null && evt.customId.includes("state")) {
                     if(bot.database.user(evt.user.id).hasPermissionNode(permissions.APPROVE)) {
                         const approve = evt.customId.includes("accept");
-                        suggestion.setApproved(approve);
+                        let member: Nullable<GuildMember> = null;
+                        if(evt.member instanceof GuildMember) {
+                            member = evt.member;
+                        }
+                        suggestion.setApproved(approve, member);
                         bot.database.saveGuilds();
                     }
                 }

@@ -62,12 +62,16 @@ class FileTreeModuleLoader<T extends Module> implements ModuleLoader<T> {
 }
 
 class FileTreeModuleOnceModuleLoader<T extends Module> extends FileTreeModuleLoader<T> {
-    private static readonly LOADED_MODULES: string[] = [];
+    private static readonly LOADED_MODULES: Map<string, Module> = new Map<string, Module>();
     async load(): Promise<Nullable<string>> {
-        const err = await super.load((m, path) => !FileTreeModuleOnceModuleLoader.LOADED_MODULES.includes(path));
-        FileTreeModuleOnceModuleLoader.LOADED_MODULES.push(...Array.from(this.childModules.entries())
-            .map(([path, m]) => path)
-            .filter(path => !FileTreeModuleOnceModuleLoader.LOADED_MODULES.includes(path)));
+        const err = await super.load((m, path) => !FileTreeModuleOnceModuleLoader.LOADED_MODULES.has(path));
+        Array.from(this.childModules.entries()).forEach(([path, m]) => FileTreeModuleOnceModuleLoader.LOADED_MODULES.set(path, m));
+        /*this.childModules.clear();
+        Array.from(FileTreeModuleOnceModuleLoader.LOADED_MODULES.entries())
+            .filter(([, m]) => (<T>m) != null)
+            .forEach(([path, m]) => {
+                this.childModules.set(path, <T>m);
+            });*/
         return err;
     }
 }
@@ -112,7 +116,7 @@ class SlashCommandModuleLoader extends FileTreeModuleLoader<SlashCommandModule> 
     }
     private static isValid(module: SlashCommandModule): boolean {
         return (module.builder instanceof SlashCommandSubcommandBuilder && module.name.includes("."))
-        || (module.builder instanceof SlashCommandBuilder && module.name.length > 0);
+            || (module.builder instanceof SlashCommandBuilder && module.name.length > 0);
     }
 }
 
@@ -141,7 +145,7 @@ class EventModuleLoader extends FileTreeModuleOnceModuleLoader<EventModule> {
     }
 }
 
-class SuggestionEventModuleLoader extends FileTreeModuleLoader<SuggestionEventModule> {
+class SuggestionEventModuleLoader extends FileTreeModuleOnceModuleLoader<SuggestionEventModule> {
     private bot: SuggestionsBot;
     constructor(path: string, bot: SuggestionsBot) {
         super(path);

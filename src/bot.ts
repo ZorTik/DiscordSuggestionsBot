@@ -7,7 +7,7 @@ import {
     SuggestionEventModuleLoader
 } from "./loader";
 import {Client, Guild, GuildMember, Message, MessageEmbed, TextChannel} from "discord.js";
-import {BgFlux, Evt, guildId, GuildIdentity, GuildMessageReference, MayUndefined, nonNull, Nullable} from "./util";
+import {BgFlux, guildId, GuildIdentity, GuildMessageReference, MayUndefined, nonNull, Nullable} from "./util";
 import {GuildDatabase, Suggestion, SuggestionData, SuggestionsGuild} from "./data";
 import * as fs from "fs";
 import {EventEmitter} from "./common";
@@ -54,10 +54,12 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
             cons(setup);
             return true;
         }
-        if(setup.suggestionsChannelId != null) {
+        if(setup.suggestionsChannelId != null
+        && setup.logChannelId != null) {
             this.database.guilds.push(new SuggestionsGuild({
                 id: guildId(guild),
                 suggestionsChannelId: setup.suggestionsChannelId,
+                logChannelId: setup.logChannelId,
                 suggestions: []
             }));
             this.database.saveGuilds();
@@ -125,7 +127,7 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
             if(data.messageId.length == 0) return null;
             const suggestion = new Suggestion(data);
             this.database.guild(guild)?.suggestions.push(suggestion);
-            this.database.saveGuilds()
+            this.database.saveGuilds();
             this.emit('suggestionCreate', suggestion);
             return suggestion;
         });
@@ -157,15 +159,11 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         return new MessageEmbed()
             .setColor(COLOR_INFO)
             .setTitle(data.title)
-            .setDescription(messages.getStr("suggestion.description").orElse("")
-                .replace("{}", authorUsername))
-            .setFields([
-                {
-                    name: messages.getStr('suggestion.content').orElse("New Suggestion"),
-                    value: "```" + data.description + "```",
-                    inline: true
-                }
-            ]);
+            .setDescription(`\`\`\`${data.description}\`\`\`\n${messages.getStr("suggestion.footer").orElse("")
+                .replace("{}", authorUsername)}`)
+            .setFooter({
+                text: "Waiting for Approval"
+            });
     }
 
     /**
@@ -189,7 +187,10 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
      * @returns True if guild is ready, false otherwise.
      */
     isReady(guild: GuildIdentity): boolean {
-        return this.database.guild(guild) != null;
+        let data: MayUndefined<SuggestionsGuild>;
+        return (data = this.database.guild(guild)) != null
+            && data.suggestionsChannelId != null
+            && data.logChannelId != null;
     }
 
     /**
@@ -218,11 +219,29 @@ class SuggestionsBot extends EventEmitter<SuggestionEvent> {
         }
         return undefined;
     }
+
+    /**
+     * Fetches configured log channel based on specific guild.
+     *
+     * @param g Guild to fetch log channel from.
+     *
+     * @returns Promise of text channel or promise of null/undefined type
+     * if something went wrong.
+     */
+    async fetchLogChannel(g: Guild): Promise<Nullable<TextChannel>> {
+        let guild = this.database.guild(g);
+        if(nonNull(guild?.logChannelId)) {
+            return <TextChannel>(await g.channels.fetch(guild!.logChannelId));
+        }
+        return null;
+    }
+
 }
 
 type SuggestionsGuildSetup = {
     guildId: string;
     suggestionsChannelId?: string;
+    logChannelId?: string;
 }
 
 class ModuleRegistry extends ModuleLoaderQueue {
@@ -232,7 +251,7 @@ class ModuleRegistry extends ModuleLoaderQueue {
         super([
             new SlashCommandModuleLoader("src/command", guild),
             new EventModuleLoader("src/event", guild.client),
-            new SuggestionEventModuleLoader("src/event", bot)
+            new SuggestionEventModuleLoader("src/suggestion-event", bot)
         ]);
         this.guild = guild;
     }

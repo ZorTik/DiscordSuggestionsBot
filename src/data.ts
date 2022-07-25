@@ -1,5 +1,5 @@
 import {JsonFileMap} from "./common";
-import {Guild, Message, MessageActionRow, MessageButton, TextChannel} from "discord.js";
+import {Guild, GuildMember, Message, MessageActionRow, MessageButton, TextChannel} from "discord.js";
 import {GuildIdentity, MayUndefined, nonNull, Nullable} from "./util";
 import {PermissionGroup, PermissionHolder} from "./common/permissions";
 import {getGroups} from "./api/api";
@@ -19,6 +19,7 @@ class GuildDatabase extends JsonFileMap {
             .map(g => <SuggestionsGuildData> {
                 id: g.id,
                 suggestionsChannelId: g.suggestionsChannelId,
+                logChannelId: g.logChannelId,
                 suggestions: g.suggestions
                     .map((s: Suggestion) => <SuggestionData> {
                         guildId: s.guildId,
@@ -58,7 +59,8 @@ class GuildDatabase extends JsonFileMap {
         }
     }
     guild(guild: GuildIdentity): MayUndefined<SuggestionsGuild> {
-        return this.guilds.find(g => g.id === (guild instanceof Guild ? guild.id : <string>guild))
+        let guildId = guild instanceof Guild ? guild.id : guild;
+        return this.guilds.find(g => g.id === guildId)
     }
     user(id: string): SuggestionsUser {
         let user = this.users.find(u => u.id === id);
@@ -75,10 +77,12 @@ class GuildDatabase extends JsonFileMap {
 class SuggestionsGuild {
     readonly id: string;
     readonly suggestionsChannelId: string;
+    readonly logChannelId: string;
     readonly suggestions: Suggestion[];
     constructor(data: SuggestionsGuildData) {
         this.id = data.id;
         this.suggestionsChannelId = data.suggestionsChannelId;
+        this.logChannelId = data.logChannelId;
         this.suggestions = data.suggestions.map(d => new Suggestion(d));
     }
 }
@@ -111,9 +115,12 @@ class Suggestion {
         this.other = data.other;
     }
 
-    setApproved(approved: boolean) {
+    setApproved(approved: boolean, approvedBy: Nullable<GuildMember> = null) {
         this.other.approved = approved;
-        bot.emit("suggestionApproveState", this);
+        bot.emit("suggestionApproveState", <SuggestionApprovalEvent>{
+            approvedBy: approvedBy,
+            suggestion: this
+        });
     }
 
     isApproved(): boolean {
@@ -136,9 +143,15 @@ class Suggestion {
     }
 }
 
+type SuggestionApprovalEvent = {
+    approvedBy: Nullable<GuildMember>;
+    suggestion: Suggestion;
+}
+
 type SuggestionsGuildData = {
     id: string;
     suggestionsChannelId: string;
+    logChannelId: string;
     suggestions: SuggestionData[];
 }
 
@@ -160,5 +173,6 @@ export {
     GuildDatabase,
     SuggestionsGuild,
     Suggestion,
+    SuggestionApprovalEvent,
     SuggestionData
 };
